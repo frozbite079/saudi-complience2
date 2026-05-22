@@ -1,0 +1,4 @@
+/.env
+/.env.example
+/models--janni-t--qwen3-embedding-0.6b-tei-onnx
+/venv

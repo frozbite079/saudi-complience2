@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SBC Inspection Report — RPT-2026-05-0448</title>
+  <style>
+/* ══════════════════════════════════════════════════════════════
+   SBC Inspection Report — Stylesheet
+   Design System: Institutional Regulatory System (Stitch)
+   ══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Reset & Base ───────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Primary Palette */
+  --primary:            #1B5E20;
+  --primary-dark:       #00450D;
+  --primary-light:      #2E7D32;
+  --primary-container:  #E8F5E9;
+
+  /* Surface */
+  --surface:            #FFFFFF;
+  --surface-dim:        #F9F9F9;
+  --surface-container:  #F5F5F5;
+  --surface-border:     #E0E0E0;
+
+  /* Text */
+  --on-surface:         #1A1C1C;
+  --on-surface-muted:   #41493E;
+  --on-surface-subtle:  #666666;
+  --on-primary:         #FFFFFF;
+
+  /* Semantic */
+  --critical:           #C62828;
+  --critical-bg:        #FFEBEE;
+  --high:               #E65100;
+  --high-bg:            #FFF3E0;
+  --medium:             #F57F17;
+  --medium-bg:          #FFFDE7;
+  --low:                #2E7D32;
+  --low-bg:             #E8F5E9;
+  --compliant:          #2E7D32;
+  --compliant-bg:       #E8F5E9;
+
+  /* Spacing */
+  --page-margin:        48px;
+  --section-gap:        32px;
+  --card-padding:       24px;
+
+  /* Font */
+  --font:               'Inter', -apple-system, sans-serif;
+}
+
+html { font-size: 14px; }
+body {
+  font-family: var(--font);
+  color: var(--on-surface);
+  background: var(--surface-dim);
+  line-height: 1.5;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ── Page Container (A4) ────────────────────────────────────── */
+.report-page {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto 24px;
+  background: var(--surface);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+@media print {
+  body { background: white; }
+  .report-page {
+    box-shadow: none;
+    margin: 0;
+    page-break-after: always;
+  }
+}
+
+.page-content {
+  padding: var(--page-margin);
+  padding-top: 24px;
+}
+
+/* ── Header Bar ─────────────────────────────────────────────── */
+.report-header {
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 16px var(--page-margin);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.report-header .header-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.report-header .header-logo .logo-icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.report-header .header-org {
+  text-align: center;
+  flex: 1;
+}
+
+.report-header .header-org .org-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.report-header .header-org .org-subtitle {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.report-header .header-meta {
+  text-align: right;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.report-header .header-meta .report-id {
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* ── Section Title ──────────────────────────────────────────── */
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--primary);
+  margin-bottom: 20px;
+  margin-top: var(--section-gap);
+}
+
+.section-title:first-child { margin-top: 0; }
+
+/* ── Main Title Block (Cover) ───────────────────────────────── */
+.cover-title {
+  text-align: center;
+  padding: 40px 0 32px;
+}
+
+.cover-title h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.cover-title .subtitle {
+  font-size: 13px;
+  color: var(--on-surface-muted);
+  font-weight: 400;
+}
+
+.cover-title .divider {
+  width: 120px;
+  height: 3px;
+  background: var(--primary);
+  margin: 16px auto 0;
+  border-radius: 2px;
+}
+
+/* ── Metadata Grid ──────────────────────────────────────────── */
+.metadata-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: var(--section-gap);
+}
+
+.metadata-grid .meta-item {
+  display: flex;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--surface-border);
+  gap: 8px;
+}
+
+.metadata-grid .meta-item:nth-child(odd) {
+  border-right: 1px solid var(--surface-border);
+}
+
+.metadata-grid .meta-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.metadata-grid .meta-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface);
+}
+
+/* ── Compliance Summary Box ─────────────────────────────────── */
+.compliance-box {
+  background: var(--primary-container);
+  border: 1px solid #C8E6C9;
+  border-radius: 8px;
+  padding: var(--card-padding);
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-bottom: 20px;
+}
+
+.compliance-gauge {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--primary) calc(var(--score) * 3.6deg),
+    #E0E0E0 0deg
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.compliance-gauge::after {
+  content: '';
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--primary-container);
+  position: absolute;
+}
+
+.compliance-gauge .score {
+  position: relative;
+  z-index: 1;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.compliance-details { flex: 1; }
+
+.compliance-details .status-label {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.compliance-details .status-label.remediation { color: var(--medium); }
+.compliance-details .status-label.compliant   { color: var(--compliant); }
+.compliance-details .status-label.critical    { color: var(--critical); }
+
+.compliance-stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.compliance-stats .stat {
+  text-align: center;
+}
+
+.compliance-stats .stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.compliance-stats .stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── AI Badge ───────────────────────────────────────────────── */
+.ai-badge {
+  background: var(--surface-container);
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--on-surface-muted);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.ai-badge strong { color: var(--on-surface); }
+
+/* ── Severity Badges ────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.badge-critical { background: var(--critical); color: white; }
+.badge-high     { background: var(--high);     color: white; }
+.badge-medium   { background: var(--medium);   color: white; }
+.badge-low      { background: var(--low);      color: white; }
+.badge-compliant{ background: var(--compliant); color: white; }
+.badge-violation{ background: var(--critical); color: white; }
+.badge-uncertain{ background: #757575;         color: white; }
+
+/* ── Violation Cards ────────────────────────────────────────── */
+.violation-card {
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  page-break-inside: avoid;
+}
+
+.violation-card.severity-critical { border-left: 5px solid var(--critical); }
+.violation-card.severity-high     { border-left: 5px solid var(--high); }
+.violation-card.severity-medium   { border-left: 5px solid var(--medium); }
+.violation-card.severity-low      { border-left: 5px solid var(--low); }
+
+.violation-card .card-header {
+  background: var(--surface-container);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.violation-card .card-header .vio-id {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-muted);
+}
+
+.violation-card .card-header .sbc-ref {
+  font-size: 11px;
+  color: var(--on-surface-subtle);
+  margin-left: auto;
+}
+
+.violation-card .card-body {
+  padding: 16px;
+}
+
+.violation-card .card-body h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+  margin-bottom: 12px;
+}
+
+.violation-card .card-content {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+}
+
+.violation-card .evidence-image {
+  width: 100%;
+  max-height: 200px;
+  border-radius: 4px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-container);
+  object-fit: contain;
+}
+
+.violation-card .evidence-placeholder {
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: var(--surface-container);
+  border: 1px dashed var(--surface-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--on-surface-subtle);
+}
+
+.detail-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.detail-row .detail-label {
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+.detail-row .detail-value {
+  color: var(--on-surface);
+}
+
+/* ── Evidence Grid ──────────────────────────────────────────── */
+.evidence-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: var(--section-gap);
+}
+
+.evidence-item {
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  overflow: hidden;
+  page-break-inside: avoid;
+}
+
+.evidence-item img {
+  width: 100%;
+  max-height: 450px;
+  background: var(--surface-container);
+  object-fit: contain;
+  display: block;
+}
+
+.evidence-item .evidence-caption {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--on-surface-muted);
+  background: var(--surface-container);
+  border-top: 1px solid var(--surface-border);
+}
+
+.evidence-item .evidence-caption strong {
+  color: var(--on-surface);
+}
+
+/* ── Reference Table ────────────────────────────────────────── */
+.ref-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: var(--section-gap);
+}
+
+.ref-table thead th {
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: none;
+}
+
+.ref-table thead th:first-child { border-radius: 4px 0 0 0; }
+.ref-table thead th:last-child  { border-radius: 0 4px 0 0; }
+
+.ref-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--surface-border);
+  vertical-align: top;
+}
+
+.ref-table tbody tr:nth-child(even) { background: var(--surface-container); }
+.ref-table tbody tr:hover { background: #F0F4F0; }
+
+/* ── Methodology Box ────────────────────────────────────────── */
+.methodology-box {
+  background: var(--surface-container);
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  padding: 20px 24px;
+  margin-bottom: var(--section-gap);
+}
+
+.methodology-box .method-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.methodology-box .method-label {
+  font-weight: 600;
+  color: var(--on-surface-muted);
+  min-width: 160px;
+}
+
+.methodology-box .method-value {
+  color: var(--on-surface);
+}
+
+.methodology-box .disclaimer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-border);
+  font-size: 11px;
+  color: var(--on-surface-subtle);
+  font-style: italic;
+}
+
+/* ── Sign-off Block ─────────────────────────────────────────── */
+.signoff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  margin-bottom: var(--section-gap);
+}
+
+.signoff-block .signoff-role {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--on-surface-muted);
+  margin-bottom: 16px;
+}
+
+.signoff-block .signoff-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+  margin-bottom: 4px;
+}
+
+.signoff-block .signoff-title {
+  font-size: 11px;
+  color: var(--on-surface-subtle);
+  margin-bottom: 24px;
+}
+
+.signoff-block .signature-line {
+  border-top: 1px solid var(--on-surface);
+  padding-top: 6px;
+  font-size: 10px;
+  color: var(--on-surface-subtle);
+  margin-bottom: 4px;
+}
+
+.signoff-block .signoff-date {
+  font-size: 11px;
+  color: var(--on-surface-muted);
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+.report-footer {
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 10px var(--page-margin);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.report-footer .confidential {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.report-footer .page-number {
+  opacity: 0.85;
+}
+
+/* ── Stamp ──────────────────────────────────────────────────── */
+.stamp-area {
+  width: 100px;
+  height: 100px;
+  border: 2px dashed var(--surface-border);
+  border-radius: 50%;
+  margin: 0 auto var(--section-gap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--on-surface-subtle);
+  text-align: center;
+}
+
+/* ── Utilities ──────────────────────────────────────────────── */
+.text-center { text-align: center; }
+.mt-0  { margin-top: 0; }
+.mb-0  { margin-bottom: 0; }
+.mb-sm { margin-bottom: 12px; }
+.mb-md { margin-bottom: 20px; }
+
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 1 — COVER PAGE
+     ═══════════════════════════════════════════════════════════ -->
+<div class="report-page">
+  <div class="report-header">
+    <div class="header-logo">
+      <div class="logo-icon">🏛️</div>
+    </div>
+    <div class="header-org">
+      <div class="org-title">Saudi Building Code National Committee</div>
+      <div class="org-subtitle">Kingdom of Saudi Arabia</div>
+    </div>
+    <div class="header-meta">
+      <div class="report-id">RPT-2026-05-0448</div>
+      <div>May 22, 2026</div>
+    </div>
+  </div>
+
+  <div class="page-content">
+    <div class="cover-title">
+      <h1>BUILDING INSPECTION REPORT</h1>
+      <div class="subtitle">Official Compliance Record — AI-Assisted Analysis</div>
+      <div class="divider"></div>
+    </div>
+
+    <div class="metadata-grid">
+      <div class="meta-item">
+        <span class="meta-label">Report ID</span>
+        <span class="meta-value">RPT-2026-05-0448</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Project Name</span>
+        <span class="meta-value">Building Inspection</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Inspection Date</span>
+        <span class="meta-value">May 22, 2026</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Classification</span>
+        <span class="meta-value">Electrical</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Permit No.</span>
+        <span class="meta-value">N/A</span>
+      </div>
+    </div>
+
+    <h2 class="section-title mt-0">1.0 Compliance Summary</h2>
+
+    <div class="compliance-box">
+      <div class="compliance-gauge" style="--score: 0">
+        <span class="score">0%</span>
+      </div>
+      <div class="compliance-details">
+        <div class="status-label critical">✕ NON-COMPLIANT</div>
+        <div class="compliance-stats">
+          <div class="stat">
+            <div class="stat-value">30</div>
+            <div class="stat-label">Total Items</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" style="color: var(--critical)">9</div>
+            <div class="stat-label">Violations</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" style="color: var(--compliant)">0</div>
+            <div class="stat-label">Compliant</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" style="color: #757575">21</div>
+            <div class="stat-label">Uncertain</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-badge">
+      <strong>AI-Powered Analysis</strong> &nbsp;|&nbsp;
+      Generated: May 22, 2026 15:30
+    </div>
+  </div>
+
+  <div class="report-footer">
+    <span class="confidential">Confidential — For Authorized Personnel Only</span>
+    <span class="page-number">Page 1 of 4</span>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 2 — VIOLATION DETAILS
+     ═══════════════════════════════════════════════════════════ -->
+<div class="report-page">
+  <div class="report-header">
+    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
+    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-meta"><div class="report-id">RPT-2026-05-0448</div></div>
+  </div>
+
+  <div class="page-content">
+    <h2 class="section-title mt-0">2.0 Violation Details</h2>
+    
+    <div class="violation-card severity-critical">
+      <div class="card-header">
+        <span class="badge badge-critical">CRITICAL</span>
+        <span class="vio-id">VIO-001</span>
+        <span class="sbc-ref">SBC Ref: 52-7.2</span>
+      </div>
+      <div class="card-body">
+        <h3>Fire-rated seal at cable entry through walls/floors</h3>
+        <div class="card-content">
+          <div><div class="evidence-placeholder">Bounding box detected at region</div></div>
+          <div>
+            <div class="detail-row">
+              <span class="detail-label">Timestamp</span>
+              <span class="detail-value" style="font-family: monospace; background: var(--surface-container); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--surface-border); cursor: pointer; color: var(--primary);" onclick="jumpToVideo(3.5)" title="Click to jump video to 00:03">⏱️ 00:03</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Description</span>
+              <span class="detail-value"></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">SBC Code</span>
+              <span class="detail-value">52-7.2 — Sealing of wiring system...</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Priority</span>
+              <span class="detail-value"><span class="badge badge-critical">CRITICAL</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="report-footer">
+    <span class="confidential">Confidential — For Authorized Personnel Only</span>
+    <span class="page-number">Page 2 of 4</span>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 3 — MEDIA EVIDENCE & SBC REFERENCES
+     ═══════════════════════════════════════════════════════════ -->
+<div class="report-page">
+  <div class="report-header">
+    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
+    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-meta"><div class="report-id">RPT-2026-05-0448</div></div>
+  </div>
+
+  <div class="page-content">
+    <h2 class="section-title mt-0">3.0 Media Evidence</h2>
+    
+    <div class="evidence-grid">
+      <div class="evidence-item" style="grid-column: span 2;">
+        <video id="evidence-video" controls style="width: 100%; max-height: 500px; border-radius: 8px; background: #000;">
+          <source src="/api/v1/download/violation_3bc7c925e0d2.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+        <div class="evidence-caption">
+          <strong>Figure 3.1</strong> — Full annotated inspection video with violation bounding boxes
+        </div>
+        <script>
+          function jumpToVideo(seconds) {
+            const vid = document.getElementById('evidence-video');
+            if(vid) {
+              vid.currentTime = seconds;
+              vid.play();
+              vid.scrollIntoView({behavior: "smooth", block: "center"});
+            }
+          }
+        </script>
+      </div>
+    </div>
+
+    <h2 class="section-title">4.0 SBCNC Code References</h2>
+
+    <table class="ref-table">
+      <thead>
+        <tr>
+          <th style="width:40px">#</th>
+          <th style="width:140px">SBC Code</th>
+          <th>Requirement Summary</th>
+          <th style="width:100px">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+        <tr>
+          <td>1</td>
+          <td><strong>52-7.2</strong></td>
+          <td>Sealing of wiring system...</td>
+          <td><span class="badge badge-violation">Violation</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="report-footer">
+    <span class="confidential">Confidential — For Authorized Personnel Only</span>
+    <span class="page-number">Page 3 of 4</span>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 4 — METHODOLOGY & SIGN-OFF
+     ═══════════════════════════════════════════════════════════ -->
+<div class="report-page">
+  <div class="report-header">
+    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
+    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-meta"><div class="report-id">RPT-2026-05-0448</div></div>
+  </div>
+
+  <div class="page-content">
+    <h2 class="section-title mt-0">5.0 AI Analysis Methodology</h2>
+
+    <div class="methodology-box">
+      <div class="method-row">
+        <span class="method-label">Engine</span>
+        <span class="method-value">Saudi SBC Compliance AI</span>
+      </div>
+      <div class="method-row">
+        <span class="method-label">Analysis Type</span>
+        <span class="method-value">Multi-modal Vision + RAG-augmented Code Matching</span>
+      </div>
+      <div class="method-row">
+        <span class="method-label">Knowledge Base</span>
+        <span class="method-value">Saudi Building Code National Committee (SBCNC) Database</span>
+      </div>
+      <div class="method-row">
+        <span class="method-label">Rules Evaluated</span>
+        <span class="method-value">30 items against 8 SBC code sections per item</span>
+      </div>
+      <div class="method-row">
+        <span class="method-label">Token Usage</span>
+        <span class="method-value">Observe: N/A tokens | Judge: N/A tokens</span>
+      </div>
+      <div class="disclaimer">
+        ⚠ This AI-generated analysis is advisory only. Final compliance determination
+        must be made by a certified SBC inspector in accordance with SBCNC regulations.
+      </div>
+    </div>
+
+    <h2 class="section-title">6.0 Sign-off &amp; Authorization</h2>
+
+    <div class="signoff-grid">
+      <div class="signoff-block">
+        <div class="signoff-role">Prepared By</div>
+        <div class="signoff-name">SBC Compliance AI System</div>
+        <div class="signoff-title">Automated Audit Engine</div>
+        <div class="signature-line">System Generated</div>
+        <div class="signoff-date">May 22, 2026</div>
+      </div>
+      <div class="signoff-block">
+        <div class="signoff-role">Reviewed By</div>
+        <div class="signoff-name">_____________________</div>
+        <div class="signoff-title">Chief Compliance Officer</div>
+        <div class="signature-line">Signature</div>
+        <div class="signoff-date">_______________</div>
+      </div>
+    </div>
+
+    <div class="stamp-area">Official<br>Stamp</div>
+  </div>
+
+  <div class="report-footer">
+    <span class="confidential">End of Report — Confidential</span>
+    <span class="page-number">Page 4 of 4</span>
+  </div>
+</div>
+
+</body>
+</html>

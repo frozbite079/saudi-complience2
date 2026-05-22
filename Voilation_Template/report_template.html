@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SBC Inspection Report — {{ report_id }}</title>
+  <style>
+    {
+        {
+        inline_css
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════
+     PAGE 1 — COVER PAGE
+     ═══════════════════════════════════════════════════════════ -->
+  <div class="report-page">
+    <div class="report-header">
+      <div class="header-logo">
+        <div class="logo-icon">🏛️</div>
+      </div>
+      <div class="header-org">
+        <div class="org-title">Saudi Building Code National Committee</div>
+        <div class="org-subtitle">Kingdom of Saudi Arabia</div>
+      </div>
+      <div class="header-meta">
+        <div class="report-id">{{ report_id }}</div>
+        <div>{{ report_date }}</div>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- Title Block -->
+      <div class="cover-title">
+        <h1>BUILDING INSPECTION REPORT</h1>
+        <div class="subtitle">Official Compliance Record — AI-Assisted Analysis</div>
+        <div class="divider"></div>
+      </div>
+
+      <!-- Metadata Grid -->
+      <div class="metadata-grid">
+        <div class="meta-item">
+          <span class="meta-label">Report ID</span>
+          <span class="meta-value">{{ report_id }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Project Name</span>
+          <span class="meta-value">{{ project_name }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Inspection Date</span>
+          <span class="meta-value">{{ inspection_date }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Location</span>
+          <span class="meta-value">{{ location }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Inspector</span>
+          <span class="meta-value">{{ inspector_name }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Building Type</span>
+          <span class="meta-value">{{ building_type }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Category</span>
+          <span class="meta-value">{{ classification }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Permit No.</span>
+          <span class="meta-value">{{ permit_no }}</span>
+        </div>
+      </div>
+
+      <!-- Compliance Summary -->
+      <h2 class="section-title mt-0">1.0 Compliance Summary</h2>
+
+      <div class="compliance-box">
+        <div class="compliance-gauge" style="--score: {{ compliance_rate }}">
+          <span class="score">{{ compliance_rate }}%</span>
+        </div>
+        <div class="compliance-details">
+          {% if compliance_rate >= 90 %}
+          <div class="status-label compliant">✓ COMPLIANT</div>
+          {% elif compliance_rate >= 60 %}
+          <div class="status-label remediation">⚠ REQUIRES REMEDIATION</div>
+          {% else %}
+          <div class="status-label critical">✕ NON-COMPLIANT</div>
+          {% endif %}
+          <div class="compliance-stats">
+            <div class="stat">
+              <div class="stat-value">{{ total_items }}</div>
+              <div class="stat-label">Total Items</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" style="color: var(--critical)">{{ violation_count }}</div>
+              <div class="stat-label">Violations</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" style="color: var(--compliant)">{{ compliant_count }}</div>
+              <div class="stat-label">Compliant</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" style="color: #757575">{{ uncertain_count }}</div>
+              <div class="stat-label">Uncertain</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Badge -->
+      <div class="ai-badge">
+        <strong>AI-Powered Analysis</strong> by GLM-4.6V &nbsp;|&nbsp;
+        Generated: {{ generated_at }}
+      </div>
+
+    </div><!-- /page-content -->
+
+    <div class="report-footer">
+      <span class="confidential">Confidential — For Authorized Personnel Only</span>
+      <span class="page-number">Page 1 of {{ total_pages }}</span>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════
+     PAGE 2 — VIOLATION DETAILS
+     ═══════════════════════════════════════════════════════════ -->
+  <div class="report-page">
+    <div class="report-header">
+      <div class="header-logo">
+        <div class="logo-icon">🏛️</div>
+      </div>
+      <div class="header-org">
+        <div class="org-title">SBC Inspection Report</div>
+      </div>
+      <div class="header-meta">
+        <div class="report-id">{{ report_id }}</div>
+      </div>
+    </div>
+
+    <div class="page-content">
+      <h2 class="section-title mt-0">2.0 Violation Details</h2>
+
+      {% for v in violations %}
+      <div class="violation-card severity-{{ v.priority|lower }}">
+        <div class="card-header">
+          <span class="badge badge-{{ v.priority|lower }}">{{ v.priority }}</span>
+          <span class="vio-id">VIO-{{ '%03d'|format(loop.index) }}</span>
+          <span class="sbc-ref">SBC Ref: {{ v.sbc_reference }}</span>
+        </div>
+        <div class="card-body">
+          <h3>{{ v.cv_target or v.source_text[:60] }}</h3>
+          <div class="card-content">
+
+            <!-- Evidence Image -->
+            <div>
+              {% if v.bbox and annotated_image %}
+              <img class="evidence-image" src="{{ annotated_image }}" alt="Annotated evidence">
+              {% else %}
+              <div class="evidence-placeholder">No annotated image available</div>
+              {% endif %}
+            </div>
+
+            <!-- Details -->
+            <div>
+              <div class="detail-row">
+                <span class="detail-label">Description</span>
+                <span class="detail-value">{{ v.source_text }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">SBC Code</span>
+                <span class="detail-value">{{ v.sbc_reference }} — {{ v.rule_text|default('See SBCNC documentation')
+                  }}</span>
+              </div>
+              {% if v.remediation %}
+              <div class="detail-row">
+                <span class="detail-label">Remediation</span>
+                <span class="detail-value">{{ v.remediation }}</span>
+              </div>
+              {% endif %}
+              <div class="detail-row">
+                <span class="detail-label">Priority</span>
+                <span class="detail-value"><span class="badge badge-{{ v.priority|lower }}">{{ v.priority
+                    }}</span></span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if not violations %}
+      <div class="ai-badge" style="text-align:center; padding:40px;">
+        <strong style="color: var(--compliant); font-size: 16px;">✓ No Violations Detected</strong><br>
+        All inspected items meet Saudi Building Code requirements.
+      </div>
+      {% endif %}
+
+    </div>
+
+    <div class="report-footer">
+      <span class="confidential">Confidential — For Authorized Personnel Only</span>
+      <span class="page-number">Page 2 of {{ total_pages }}</span>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════
+     PAGE 3 — MEDIA EVIDENCE & SBC REFERENCES
+     ═══════════════════════════════════════════════════════════ -->
+  <div class="report-page">
+    <div class="report-header">
+      <div class="header-logo">
+        <div class="logo-icon">🏛️</div>
+      </div>
+      <div class="header-org">
+        <div class="org-title">SBC Inspection Report</div>
+      </div>
+      <div class="header-meta">
+        <div class="report-id">{{ report_id }}</div>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- Media Evidence -->
+      <h2 class="section-title mt-0">3.0 Media Evidence</h2>
+
+      {% if annotated_image %}
+      <div class="evidence-grid">
+        <div class="evidence-item" style="grid-column: span 2;">
+          <img src="{{ annotated_image }}" alt="Annotated inspection image">
+          <div class="evidence-caption">
+            <strong>Figure 3.1</strong> — Full annotated inspection image with violation bounding boxes
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="ai-badge mb-md">No media evidence captured for this inspection.</div>
+      {% endif %}
+
+      <!-- SBC Code References -->
+      <h2 class="section-title">4.0 SBCNC Code References</h2>
+
+      <table class="ref-table">
+        <thead>
+          <tr>
+            <th style="width:40px">#</th>
+            <th style="width:140px">SBC Code</th>
+            <th>Requirement Summary</th>
+            <th style="width:100px">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in violations %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><strong>{{ v.sbc_reference }}</strong></td>
+            <td>{{ v.rule_text|default(v.source_text[:80]) }}</td>
+            <td><span class="badge badge-violation">Violation</span></td>
+          </tr>
+          {% endfor %}
+          {% if not violations %}
+          <tr>
+            <td colspan="4" style="text-align:center; padding:20px; color:var(--on-surface-subtle);">
+              No code violations to report.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+
+    </div>
+
+    <div class="report-footer">
+      <span class="confidential">Confidential — For Authorized Personnel Only</span>
+      <span class="page-number">Page 3 of {{ total_pages }}</span>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════════
+     PAGE 4 — METHODOLOGY & SIGN-OFF
+     ═══════════════════════════════════════════════════════════ -->
+  <div class="report-page">
+    <div class="report-header">
+      <div class="header-logo">
+        <div class="logo-icon">🏛️</div>
+      </div>
+      <div class="header-org">
+        <div class="org-title">SBC Inspection Report</div>
+      </div>
+      <div class="header-meta">
+        <div class="report-id">{{ report_id }}</div>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- AI Methodology -->
+      <h2 class="section-title mt-0">5.0 AI Analysis Methodology</h2>
+
+      <div class="methodology-box">
+        <div class="method-row">
+          <span class="method-label">Model</span>
+          <span class="method-value">GLM-4.6V (Zhipu AI)</span>
+        </div>
+        <div class="method-row">
+          <span class="method-label">Analysis Type</span>
+          <span class="method-value">Multi-modal Vision + RAG-augmented Code Matching</span>
+        </div>
+        <div class="method-row">
+          <span class="method-label">Knowledge Base</span>
+          <span class="method-value">Saudi Building Code National Committee (SBCNC) Database</span>
+        </div>
+        <div class="method-row">
+          <span class="method-label">Rules Evaluated</span>
+          <span class="method-value">{{ total_items }} items against {{ rules_per_item|default(8) }} SBC code sections
+            per item</span>
+        </div>
+        <div class="method-row">
+          <span class="method-label">Token Usage</span>
+          <span class="method-value">Observe: {{ token_observe|default('N/A') }} | Judge: {{ token_judge|default('N/A')
+            }}</span>
+        </div>
+        <div class="disclaimer">
+          ⚠ This AI-generated analysis is advisory only. Final compliance determination
+          must be made by a certified SBC inspector in accordance with SBCNC regulations.
+        </div>
+      </div>
+
+      <!-- Sign-off -->
+      <h2 class="section-title">6.0 Sign-off & Authorization</h2>
+
+      <div class="signoff-grid">
+        <div class="signoff-block">
+          <div class="signoff-role">Prepared By</div>
+          <div class="signoff-name">{{ inspector_name }}</div>
+          <div class="signoff-title">Certified SBC Inspector</div>
+          <div class="signature-line">Signature</div>
+          <div class="signoff-date">{{ inspection_date }}</div>
+        </div>
+        <div class="signoff-block">
+          <div class="signoff-role">Reviewed By</div>
+          <div class="signoff-name">{{ reviewer_name|default('_____________________') }}</div>
+          <div class="signoff-title">{{ reviewer_title|default('Chief Compliance Officer') }}</div>
+          <div class="signature-line">Signature</div>
+          <div class="signoff-date">{{ review_date|default('_______________') }}</div>
+        </div>
+      </div>
+
+      <!-- Official Stamp -->
+      <div class="stamp-area">Official<br>Stamp</div>
+
+    </div>
+
+    <div class="report-footer">
+      <span class="confidential">End of Report — Confidential</span>
+      <span class="page-number">Page 4 of {{ total_pages }}</span>
+    </div>
+  </div>
+
+</body>
+
+</html>

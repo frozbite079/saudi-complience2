@@ -1,0 +1,29 @@
+[
+  {
+    "category": "Electricity",
+    "rule_text": "Doors into electrical control panel rooms shall be marked with a plainly visible and legible sign stating 'electrical room' or similar approved wording.",
+    "priority": "HIGH",
+    "sub_category": "Equipment Presence & Placement",
+    "sBC_reference": "51-4.1",
+    "cV_target": "Sign 'ELECTRICAL ROOM' on door",
+    "distance": 0.09446018934249878
+  },
+  {
+    "cV_target": "Warning notice on battery room/enclosure",
+    "rule_text": "Battery rooms and enclosures shall have identification labels and warning notices indicating voltage, hazard, and access restrictions.",
+    "priority": "HIGH",
+    "sub_category": "Labeling & Signage",
+    "category": "Electricity",
+    "sBC_reference": "D.57",
+    "distance": 0.16283702850341797
+  },
+  {
+    "sub_category": "Photovoltaic",
+    "rule_text": "The PV array DC switch disconnector shall be identified by a sign affixed in a prominent location adjacent to the switch disconnector. Where multiple disconnection devices are not ganged, signage shall warn of multiple DC sources.",
+    "priority": "HIGH",
+    "cV_target": "Identification sign adjacent to PV array DC switch disconnector",
+    "sBC_reference": "712:51-4.106.2",
+    "category": "Electricity",
+    "distance": 0.1952449083328247
+  }
+]
