@@ -90,7 +90,7 @@ def _crop_image_b64(annotated_b64: str, bbox: list) -> str | None:
 def _render_violation_card(v: dict, index: int, annotated_image: str | None = None) -> str:
     """Render a single violation card HTML block."""
     severity = _severity_class(v.get("priority", "MEDIUM"))
-    priority = _esc(v.get("priority", "MEDIUM"))
+    risk_level = _esc(v.get("priority", "MEDIUM"))
     vio_id = f"VIO-{index:03d}"
     sbc_ref = _esc(v.get("sbc_reference", "N/A"))
     title = _esc(v.get("cv_target") or (v.get("source_text", "")[:60]))
@@ -98,6 +98,8 @@ def _render_violation_card(v: dict, index: int, annotated_image: str | None = No
     rule_text = _esc(v.get("rule_text", "See SBCNC documentation"))
     remediation = _esc(v.get("remediation", ""))
     bbox = v.get("bbox")
+    confidence_raw = v.get("confidence", None)
+    confidence_pct = int(round(float(confidence_raw) * 100)) if confidence_raw is not None else None
 
     # Evidence image — prioritize pre-annotated video frame, then fallback to cropped image
     evidence_html = '<div class="evidence-placeholder">No annotated image available</div>'
@@ -131,10 +133,25 @@ def _render_violation_card(v: dict, index: int, annotated_image: str | None = No
               <span class="detail-value" style="font-family: monospace; background: var(--surface-container); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--surface-border); color: var(--primary);">⏱️ {mins:02d}:{secs:02d}</span>
             </div>"""
 
+    confidence_row = ""
+    if confidence_pct is not None:
+        # Colour the bar: >=80 green, >=60 orange, else red
+        bar_color = "#2e7d32" if confidence_pct >= 80 else "#e65100" if confidence_pct >= 60 else "#c62828"
+        confidence_row = f"""
+            <div class="detail-row">
+              <span class="detail-label">AI Confidence</span>
+              <span class="detail-value" style="display:flex;align-items:center;gap:8px;">
+                <span style="flex:1;background:#e0e0e0;border-radius:4px;height:8px;overflow:hidden;min-width:80px;">
+                  <span style="display:block;height:100%;width:{confidence_pct}%;background:{bar_color};border-radius:4px;transition:width 0.3s;"></span>
+                </span>
+                <strong style="color:{bar_color};font-size:0.85em;white-space:nowrap;">{confidence_pct}%</strong>
+              </span>
+            </div>"""
+
     return f"""
     <div class="violation-card severity-{severity}">
       <div class="card-header">
-        <span class="badge badge-{severity}">{priority}</span>
+        <span class="badge badge-{severity}">{risk_level}</span>
         <span class="vio-id">{vio_id}</span>
         <span class="sbc-ref">SBC Ref: {sbc_ref}</span>
       </div>
@@ -152,9 +169,9 @@ def _render_violation_card(v: dict, index: int, annotated_image: str | None = No
               <span class="detail-value">{sbc_ref} — {rule_text}</span>
             </div>{remediation_row}
             <div class="detail-row">
-              <span class="detail-label">Priority</span>
-              <span class="detail-value"><span class="badge badge-{severity}">{priority}</span></span>
-            </div>
+              <span class="detail-label">Risk Level</span>
+              <span class="detail-value"><span class="badge badge-{severity}">{risk_level}</span></span>
+            </div>{confidence_row}
           </div>
         </div>
       </div>
@@ -177,7 +194,8 @@ def _render_ref_table_row(v: dict, index: int) -> str:
 def generate_report_html(
     detection_result: dict[str, Any],
     *,
-    project_name: str = "Building Inspection",
+    project_name: str = "",
+    contractor_name: str = "",
     location: str = "",
     inspector_name: str = "",
     building_type: str = "",
@@ -201,9 +219,17 @@ def generate_report_html(
 
     # ── Extract data ────────────────────────────────────────────
     summary = detection_result.get("summary", {})
-    verdicts = detection_result.get("verdicts", [])
+    # Use _report_verdicts when available (includes frame_b64 + confidence for HTML cards)
+    verdicts = detection_result.get("_report_verdicts") or detection_result.get("verdicts", [])
     annotated_image = detection_result.get("annotated_image")
+    heatmap_image = detection_result.get("heatmap_image")
+    ai_recommendations = detection_result.get("ai_recommendations", [])
     token_usage = detection_result.get("token_usage", {})
+
+    if not project_name:
+        project_name = detection_result.get("project_name") or "Building Inspection"
+    if not contractor_name:
+        contractor_name = detection_result.get("contractor_name") or ""
 
     if not classification:
         classification = detection_result.get("classification", "General")
@@ -277,11 +303,100 @@ def generate_report_html(
 
     # ── Escape metadata ─────────────────────────────────────────
     e_project = _esc(project_name or "Building Inspection")
+    e_contractor = _esc(contractor_name or "Not specified")
     e_location = _esc(location or "Not specified")
     e_inspector = _esc(inspector_name or "AI Inspector")
     e_building = _esc(building_type or "Not specified")
     e_permit = _esc(permit_no or "N/A")
     e_class = _esc(classification)
+
+    # ── Heatmap page ─────────────────────────────────────────────
+    if heatmap_image:
+        heatmap_page = f"""<div class="report-page">
+  <div class="report-header">
+    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
+    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-meta"><div class="report-id">{report_id}</div></div>
+  </div>
+  <div class="page-content">
+    <h2 class="section-title mt-0">4.0 Violation Heatmap</h2>
+    <div class="ai-badge" style="margin-bottom:16px;">
+      🔥 Spatial concentration of violations — <strong>Red zones</strong> indicate highest risk density
+      (weighted by Risk Level × AI Confidence)
+    </div>
+    <div class="evidence-grid">
+      <div class="evidence-item" style="grid-column:span 2;">
+        <img src="{heatmap_image}" alt="Violation Heatmap" style="width:100%;border-radius:8px;">
+        <div class="evidence-caption">
+          <strong>Figure 4.1</strong> — Violation heatmap overlay. Colour scale: 🔵 Blue = low risk → 🟡 Yellow → 🔴 Red = critical hotspot
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:6px;"><span style="width:20px;height:12px;background:#00008B;border-radius:2px;display:inline-block;"></span><small>Minimal risk</small></div>
+      <div style="display:flex;align-items:center;gap:6px;"><span style="width:20px;height:12px;background:#00BFFF;border-radius:2px;display:inline-block;"></span><small>Low risk</small></div>
+      <div style="display:flex;align-items:center;gap:6px;"><span style="width:20px;height:12px;background:#00FF00;border-radius:2px;display:inline-block;"></span><small>Medium risk</small></div>
+      <div style="display:flex;align-items:center;gap:6px;"><span style="width:20px;height:12px;background:#FFD700;border-radius:2px;display:inline-block;"></span><small>High risk</small></div>
+      <div style="display:flex;align-items:center;gap:6px;"><span style="width:20px;height:12px;background:#FF0000;border-radius:2px;display:inline-block;"></span><small>Critical hotspot</small></div>
+    </div>
+  </div>
+  <div class="report-footer">
+    <span class="confidential">Confidential — For Authorized Personnel Only</span>
+    <span class="page-number">Page 4 of 6</span>
+  </div>
+</div>"""
+    else:
+        heatmap_page = ""
+
+    # ── AI Recommendations page ───────────────────────────────────
+    _urgency_icons = {"IMMEDIATE": "🚨", "SHORT_TERM": "⚠️", "LONG_TERM": "📋"}
+    _effort_colors = {"LOW": "#2e7d32", "MEDIUM": "#e65100", "HIGH": "#c62828"}
+
+    if ai_recommendations:
+        rec_cards = ""
+        for i, rec in enumerate(ai_recommendations, 1):
+            sbc = _esc(rec.get("sbc_reference", "N/A"))
+            recommendation = _esc(rec.get("recommendation", ""))
+            urgency = str(rec.get("urgency", "SHORT_TERM")).upper()
+            effort = str(rec.get("estimated_effort", "MEDIUM")).upper()
+            party = _esc(rec.get("responsible_party", "Site Engineer"))
+            urgency_icon = _urgency_icons.get(urgency, "📋")
+            effort_color = _effort_colors.get(effort, "#e65100")
+
+            rec_cards += f"""
+    <div style="border:1px solid var(--surface-border);border-radius:8px;padding:16px;margin-bottom:14px;background:var(--surface-container);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:1.3em;">{urgency_icon}</span>
+        <strong style="font-size:0.95em;">REC-{i:02d} &nbsp;|&nbsp; SBC {sbc}</strong>
+        <span style="margin-left:auto;font-size:0.75em;padding:2px 8px;border-radius:12px;background:{effort_color};color:#fff;font-weight:600;">{effort} EFFORT</span>
+      </div>
+      <p style="margin:0 0 10px;font-size:0.9em;line-height:1.5;">{recommendation}</p>
+      <div style="display:flex;gap:16px;font-size:0.8em;color:var(--on-surface-subtle);">
+        <span>⏱ Urgency: <strong style="color:var(--on-surface);">{urgency.replace('_', ' ')}</strong></span>
+        <span>👷 Responsible: <strong style="color:var(--on-surface);">{party}</strong></span>
+      </div>
+    </div>"""
+
+        recommendations_page = f"""<div class="report-page">
+  <div class="report-header">
+    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
+    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-meta"><div class="report-id">{report_id}</div></div>
+  </div>
+  <div class="page-content">
+    <h2 class="section-title mt-0">5.0 AI Recommendations</h2>
+    <div class="ai-badge" style="margin-bottom:16px;">
+      🤖 <strong>AI-Generated Remediation Plan</strong> &nbsp;|&nbsp; Based on detected violations and Saudi Building Code requirements
+    </div>
+    {rec_cards}
+  </div>
+  <div class="report-footer">
+    <span class="confidential">Confidential — For Authorized Personnel Only</span>
+    <span class="page-number">Page 5 of 6</span>
+  </div>
+</div>"""
+    else:
+        recommendations_page = ""
 
     # ── Assemble full HTML ──────────────────────────────────────
     html = f"""<!DOCTYPE html>
@@ -331,6 +446,10 @@ def generate_report_html(
         <span class="meta-value">{e_project}</span>
       </div>
       <div class="meta-item">
+        <span class="meta-label">Contractor Name</span>
+        <span class="meta-value">{e_contractor}</span>
+      </div>
+      <div class="meta-item">
         <span class="meta-label">Inspection Date</span>
         <span class="meta-value">{report_date}</span>
       </div>
@@ -378,7 +497,7 @@ def generate_report_html(
 
   <div class="report-footer">
     <span class="confidential">Confidential — For Authorized Personnel Only</span>
-    <span class="page-number">Page 1 of 4</span>
+    <span class="page-number">Page 1 of 6</span>
   </div>
 </div>
 
@@ -400,7 +519,7 @@ def generate_report_html(
 
   <div class="report-footer">
     <span class="confidential">Confidential — For Authorized Personnel Only</span>
-    <span class="page-number">Page 2 of 4</span>
+    <span class="page-number">Page 2 of 6</span>
   </div>
 </div>
 
@@ -438,9 +557,21 @@ def generate_report_html(
 
   <div class="report-footer">
     <span class="confidential">Confidential — For Authorized Personnel Only</span>
-    <span class="page-number">Page 3 of 4</span>
+    <span class="page-number">Page 3 of 6</span>
   </div>
 </div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 4 — VIOLATION HEATMAP
+     ═══════════════════════════════════════════════════════════ -->
+{heatmap_page}
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     PAGE 5 — AI RECOMMENDATIONS
+     ═══════════════════════════════════════════════════════════ -->
+{recommendations_page}
 
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -482,7 +613,7 @@ def generate_report_html(
 
   <div class="report-footer">
     <span class="confidential">End of Report — Confidential</span>
-    <span class="page-number">Page 4 of 4</span>
+    <span class="page-number">Page 6 of 6</span>
   </div>
 </div>
 

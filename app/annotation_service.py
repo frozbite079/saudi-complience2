@@ -489,3 +489,71 @@ def annotate_full_video(
         return output_path
     return None
 
+
+# ── Violation Heatmap ──────────────────────────────────────────────────────
+
+_RISK_WEIGHT = {"CRITICAL": 3.0, "HIGH": 2.0, "MEDIUM": 1.0, "LOW": 0.5}
+
+
+def generate_violation_heatmap(
+    media_path_or_url: str,
+    violations: list[dict[str, Any]],
+) -> str | None:
+    """
+    Generate a heatmap overlay showing spatial concentration of violations.
+
+    Each violation with a bbox contributes a Gaussian blob weighted by
+    risk_level_weight × confidence. The heat layer is colour-mapped
+    (COLORMAP_JET: blue→green→yellow→red) and blended on top of the original.
+
+    Returns a ``data:image/jpeg;base64,...`` string, or None on failure.
+    """
+    try:
+        image = _load_image(media_path_or_url)
+    except Exception:
+        return None
+
+    height, width = image.shape[:2]
+
+    heat = np.zeros((height, width), dtype=np.float32)
+
+    spatial = [v for v in violations if v.get("bbox")]
+    if not spatial:
+        return None
+
+    for v in spatial:
+        bbox = _to_pixel_bbox(v["bbox"], width, height)
+        if not bbox:
+            continue
+        x1, y1, x2, y2 = bbox
+
+        cx = (x1 + x2) // 2
+        cy = (y1 + y2) // 2
+        sigma_x = max(10, (x2 - x1) // 2)
+        sigma_y = max(10, (y2 - y1) // 2)
+
+        risk = _RISK_WEIGHT.get(str(v.get("priority", "MEDIUM")).upper(), 1.0)
+        conf = float(v.get("confidence", 0.8))
+        weight = risk * conf
+
+        ys = np.arange(height, dtype=np.float32)
+        xs = np.arange(width, dtype=np.float32)
+        gx = np.exp(-0.5 * ((xs - cx) / sigma_x) ** 2)
+        gy = np.exp(-0.5 * ((ys - cy) / sigma_y) ** 2)
+        blob = np.outer(gy, gx) * weight
+        heat += blob
+
+    max_val = heat.max()
+    if max_val == 0:
+        return None
+
+    heat_norm = (heat / max_val * 255).astype(np.uint8)
+    colormap = cv2.applyColorMap(heat_norm, cv2.COLORMAP_JET)
+    blended = cv2.addWeighted(image, 0.55, colormap, 0.45, 0)
+
+    ok, buf = cv2.imencode(".jpg", blended, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    if not ok:
+        return None
+
+    b64 = base64.b64encode(buf).decode("utf-8")
+    return f"data:image/jpeg;base64,{b64}"

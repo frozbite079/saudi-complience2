@@ -63,6 +63,8 @@ class URLOnlyRequest(BaseModel):
     custom_prompt: str = ""
     top_k: int | None = None
     classification: str | None = None
+    project_name: str = "Building Inspection"
+    contractor_name: str = ""
 
 
 class TextSearchRequest(BaseModel):
@@ -114,7 +116,26 @@ def analyze_url(request: URLOnlyRequest):
             custom_prompt=request.custom_prompt,
             top_k=request.top_k,
             classification=request.classification,
+            project_name=request.project_name,
+            contractor_name=request.contractor_name,
         )
+        # Auto-generate HTML report for both images and videos
+        try:
+            report_name = f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.html"
+            report_path = VIDEO_OUTPUT_DIR / report_name
+            saved_path = save_report(
+                result,
+                report_path,
+                project_name=request.project_name,
+                contractor_name=request.contractor_name,
+            )
+            actual_report_name = Path(saved_path).name
+            result["report_url"] = f"/api/v1/download/{actual_report_name}"
+            logger.info("HTML Report generated: %s", actual_report_name)
+        except Exception as report_err:
+            logger.warning("Report generation failed: %s", report_err)
+
+        result.pop("_report_verdicts", None)  # internal — strip before API response
         return JSONResponse(content=result)
     except Exception as e:
         logger.exception("URL analysis failed")
@@ -128,6 +149,8 @@ async def analyze_upload(
     custom_prompt: str = Form(""),
     top_k: int | None = Form(None),
     classification: str | None = Form(None),
+    project_name: str = Form("Building Inspection"),
+    contractor_name: str = Form(""),
 ):
     suffix = Path(file.filename or "upload").suffix
     # Auto-detect video from file extension
@@ -146,18 +169,26 @@ async def analyze_upload(
             custom_prompt=custom_prompt,
             top_k=top_k,
             classification=classification,
+            project_name=project_name,
+            contractor_name=contractor_name,
         )
         # Auto-generate HTML report for both images and videos
         try:
             report_name = f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.html"
             report_path = VIDEO_OUTPUT_DIR / report_name
-            saved_path = save_report(result, report_path)
+            saved_path = save_report(
+                result,
+                report_path,
+                project_name=project_name,
+                contractor_name=contractor_name,
+            )
             actual_report_name = Path(saved_path).name
             result["report_url"] = f"/api/v1/download/{actual_report_name}"
             logger.info("HTML Report generated: %s", actual_report_name)
         except Exception as report_err:
             logger.warning("Report generation failed: %s", report_err)
 
+        result.pop("_report_verdicts", None)  # internal — strip before API response
         return JSONResponse(content=result)
     except Exception as e:
         logger.exception("Upload analysis failed")
@@ -232,6 +263,7 @@ class ReportRequest(BaseModel):
     """Request body for on-demand report generation."""
     detection_result: dict
     project_name: str = "Building Inspection"
+    contractor_name: str = ""
     location: str = ""
     inspector_name: str = ""
     building_type: str = ""
@@ -250,6 +282,7 @@ def generate_report(request: ReportRequest):
             request.detection_result,
             report_path,
             project_name=request.project_name,
+            contractor_name=request.contractor_name,
             location=request.location,
             inspector_name=request.inspector_name,
             building_type=request.building_type,

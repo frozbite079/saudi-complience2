@@ -471,3 +471,66 @@ def judge(
 
     user_content = [{"type": "text", "text": user_text}]
     return _call_llm(JUDGE_SYSTEM_PROMPT, user_content, LLM_MAX_TOKENS_JUDGE, temperature=0.1)
+
+
+_RECOMMENDATIONS_SYSTEM_PROMPT = (
+    "You are a Saudi Building Code (SBC) compliance expert. "
+    "Given a list of detected violations, generate clear, actionable remediation recommendations. "
+    "Return ONLY a valid JSON array with no markdown or explanation."
+)
+
+_RECOMMENDATIONS_USER_TEMPLATE = """\
+The following violations were detected during a compliance inspection:
+
+{violations_text}
+
+For each violation, provide a specific, practical recommendation. Return a JSON array where each item contains:
+{{
+  "sbc_reference": "the SBC code reference",
+  "recommendation": "specific action to fix this violation (2-3 sentences, practical and direct)",
+  "urgency": "IMMEDIATE|SHORT_TERM|LONG_TERM",
+  "estimated_effort": "LOW|MEDIUM|HIGH",
+  "responsible_party": "e.g. Licensed Electrician, Site Engineer, Contractor"
+}}
+
+Prioritise by risk: CRITICAL violations must be listed first. Be concise and specific to Saudi Building Code standards.
+"""
+
+
+def generate_ai_recommendations(
+    violations: list[dict],
+) -> list[dict]:
+    """
+    Call the LLM to generate structured remediation recommendations for each violation.
+    Returns a list of recommendation dicts, or an empty list on failure.
+    """
+    if not violations:
+        return []
+
+    violations_text = ""
+    for i, v in enumerate(violations, 1):
+        violations_text += (
+            f"\n{i}. SBC {v.get('sbc_reference', 'N/A')} [{v.get('priority', v.get('risk_level', 'MEDIUM'))}] "
+            f"— {v.get('cv_target', v.get('source_text', ''))[:120]}\n"
+            f"   Evidence: {v.get('evidence', '')[:200]}\n"
+        )
+
+    user_text = _RECOMMENDATIONS_USER_TEMPLATE.format(violations_text=violations_text)
+    user_content = [{"type": "text", "text": user_text}]
+
+    try:
+        raw, _ = _call_llm(
+            _RECOMMENDATIONS_SYSTEM_PROMPT,
+            user_content,
+            max_tokens=2048,
+            temperature=0.2,
+        )
+        # Parse JSON array
+        import re
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if m:
+            return json.loads(m.group(0))
+    except Exception as exc:
+        logger.warning("AI recommendations generation failed: %s", exc)
+
+    return []

@@ -15,10 +15,10 @@ from typing import Any
 
 import requests
 
-from app.annotation_service import annotate_full_video, annotate_image_base64
+from app.annotation_service import annotate_full_video, annotate_image_base64, generate_violation_heatmap
 from app.config import RAG_TOP_K, VIDEO_OUTPUT_DIR
 from app.embedding_service import embed_text
-from app.llm_service import judge, observe_items, localize_violations
+from app.llm_service import judge, observe_items, localize_violations, generate_ai_recommendations
 from app.weaviate_client import ALLOWED_CLASSIFICATIONS, CLASSIFICATION_TO_DB_CATEGORY, search_rules
 
 logger = logging.getLogger(__name__)
@@ -268,11 +268,15 @@ def detect_violations(
     custom_prompt: str = "",
     top_k: int | None = None,
     classification: str | None = None,
+    project_name: str = "Building Inspection",
+    contractor_name: str = "",
 ) -> dict[str, Any]:
     logger.info(
-        "Starting violation detection | media=%s | video=%s",
+        "Starting violation detection | media=%s | video=%s | project=%s | contractor=%s",
         media_path_or_url[:80],
         is_video,
+        project_name,
+        contractor_name,
     )
 
     # ── Cache check (skip for videos — frames change each run) ───────────
@@ -320,6 +324,8 @@ def detect_violations(
             "rules_retrieved": [],
             "verdicts": [],
             "summary": _build_summary([]),
+            "project_name": project_name,
+            "contractor_name": contractor_name,
             "annotated_image": orig_img,
             "annotated_media": (
                 {"type": "image", "data_url": orig_img}
@@ -503,12 +509,71 @@ def detect_violations(
     categories = sorted({item["category"] for item in observed_items})
     db_categories = sorted({item["db_category"] for item in observed_items})
 
+    # ── Heatmap (image only — video heatmap not supported yet) ────────────
+    heatmap_image: str | None = None
+    if violations and not is_video:
+        try:
+            heatmap_image = generate_violation_heatmap(media_path_or_url, localized)
+            if heatmap_image:
+                logger.info("Violation heatmap generated successfully.")
+        except Exception:
+            logger.exception("Failed to generate violation heatmap")
+
+    # ── AI Recommendations ────────────────────────────────────────────────
+    ai_recommendations: list[dict] = []
+    if violations:
+        try:
+            ai_recommendations = generate_ai_recommendations(violations)
+            logger.info("AI recommendations generated: %d items", len(ai_recommendations))
+        except Exception:
+            logger.exception("Failed to generate AI recommendations")
+
+    # Build verdict list for HTML report — includes frame_b64 so cards can show screenshots
+    _verdicts_for_report = [
+        {**{
+            "sbc_reference":  v.get("sbc_reference"),
+            "category":       v.get("category"),
+            "rule_text":      v.get("rule_text"),
+            "cv_target":      v.get("cv_target"),
+            "priority":       v.get("priority"),  # kept for CSS severity class lookup
+            "verdict":        v.get("verdict"),
+            "evidence":       v.get("evidence"),
+            "confidence":     v.get("confidence"),
+            "confidence_pct": int(round(float(v["confidence"]) * 100)) if v.get("confidence") is not None else None,
+            "source_text":    v.get("source_text"),
+            "bbox":           v.get("bbox"),
+            "timestamp_sec":  v.get("timestamp_sec"),
+            "frame_b64":      v.get("frame_b64"),  # used only for HTML report rendering
+            "remediation":    v.get("remediation"),
+        }}
+        for v in all_verdicts if v.get("verdict") == "VIOLATION"
+    ]
+
     result = {
         "classification": primary_category,
         "classifications": categories,
         "db_category": primary_db_category,
         "db_categories": db_categories,
-        "verdicts": [v for v in all_verdicts if v.get("verdict") == "VIOLATION"],
+        "verdicts": [
+            {
+                "sbc_reference":  v.get("sbc_reference"),
+                "category":       v.get("category"),
+                "sub_category":   v.get("sub_category"),
+                "rule_text":      v.get("rule_text"),
+                "cv_target":      v.get("cv_target"),
+                "detection_type": v.get("detection_type"),
+                "risk_level":     v.get("priority"),
+                "verdict":        v.get("verdict"),
+                "evidence":       v.get("evidence"),
+                "confidence":     v.get("confidence"),
+                "confidence_pct": int(round(float(v["confidence"]) * 100)) if v.get("confidence") is not None else None,
+                "source_item_id": v.get("source_item_id"),
+                "source_text":    v.get("source_text"),
+                "bbox":           v.get("bbox"),
+                "timestamp_sec":  v.get("timestamp_sec"),
+            }
+            for v in all_verdicts if v.get("verdict") == "VIOLATION"
+        ],
         "annotated_image": annotated_image,
         "annotated_media": (
             {"type": "image", "data_url": annotated_image}
@@ -522,10 +587,15 @@ def detect_violations(
             else None
         ),
         "summary": summary,
+        "project_name": project_name,
+        "contractor_name": contractor_name,
+        "heatmap_image": heatmap_image,
+        "ai_recommendations": ai_recommendations,
         "token_usage": {
             "observe": observe_tokens,
             "judge": judge_tokens_total,
         },
+        "_report_verdicts": _verdicts_for_report,  # internal: used by HTML report generator only
     }
 
     logger.info(

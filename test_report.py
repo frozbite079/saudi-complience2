@@ -37,6 +37,8 @@ data = {
         "high_priority_violations": 3,
         "compliance_rate": 0.0
     },
+    "project_name": "Al-Nassim Tower",
+    "contractor_name": "Saudi Oger Ltd.",
     "token_usage": {}
 }
 
