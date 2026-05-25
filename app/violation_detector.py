@@ -463,6 +463,7 @@ def detect_violations(
 
         if is_video:
             from app.annotation_service import _extract_frame_at_timestamp, annotate_video_frame_base64
+            import os
             try:
                 for violation in violations:
                     ts = violation.get("timestamp_sec")
@@ -486,11 +487,68 @@ def detect_violations(
                         
                 logger.info("Extracted and annotated individual video frames for violations.")
                 
-                # Still provide a fallback video download url
-                _, orig_vid = _get_original_media(media_path_or_url, True)
-                annotated_video_filename = orig_vid
-            except Exception:
-                logger.exception("Failed to annotate video frames")
+                # Attempt to generate the full annotated video with bounding boxes
+                annotated_video_filename = f"annotated_{uuid.uuid4().hex[:12]}.mp4"
+                output_path = str(VIDEO_OUTPUT_DIR / annotated_video_filename)
+                
+                try:
+                    # Resolve local media path for processing
+                    if media_path_or_url.startswith("http"):
+                        local_temp = str(VIDEO_OUTPUT_DIR / f"temp_{uuid.uuid4().hex[:12]}.mp4")
+                        urllib.request.urlretrieve(media_path_or_url, local_temp)
+                    else:
+                        local_temp = media_path_or_url
+                    
+                    # Generate the annotated video frame-by-frame
+                    res_path = annotate_full_video(
+                        video_path=local_temp,
+                        violations=violations,
+                        output_path=output_path,
+                        overlay_duration=3.0,
+                    )
+                    
+                    if media_path_or_url.startswith("http") and os.path.exists(local_temp):
+                        try:
+                            os.remove(local_temp)
+                        except Exception:
+                            pass
+                    
+                    if res_path:
+                        temp_ann = output_path.replace(".mp4", "_temp.mp4")
+                        if os.path.exists(temp_ann):
+                            # Try to compile/convert with ffmpeg to standard browser-compatible h264
+                            import subprocess
+                            try:
+                                subprocess.run([
+                                    "ffmpeg", "-y", "-i", temp_ann,
+                                    "-vcodec", "libx264", "-acodec", "aac",
+                                    "-pix_fmt", "yuv420p", output_path
+                                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                                try:
+                                    os.remove(temp_ann)
+                                except Exception:
+                                    pass
+                                logger.info("Video processed and encoded with h264 successfully.")
+                            except Exception:
+                                logger.warning("FFmpeg conversion failed, falling back to raw output.")
+                                if os.path.exists(output_path):
+                                    try:
+                                        os.remove(output_path)
+                                    except Exception:
+                                        pass
+                                os.rename(temp_ann, output_path)
+                        logger.info("Full annotated video generated successfully.")
+                    else:
+                        logger.warning("Full video annotation failed, falling back to original video.")
+                        _, orig_vid = _get_original_media(media_path_or_url, True)
+                        annotated_video_filename = orig_vid
+                except Exception as inner_err:
+                    logger.exception("Failed to run full video annotation: %s", inner_err)
+                    _, orig_vid = _get_original_media(media_path_or_url, True)
+                    annotated_video_filename = orig_vid
+                    
+            except Exception as e:
+                logger.exception("Failed to annotate video frames: %s", e)
                 annotated_video_filename = None
         else:
             # Image: annotate the single image
