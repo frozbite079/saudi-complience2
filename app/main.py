@@ -24,7 +24,7 @@ from app.config import (
     RAG_TOP_K,
     VIDEO_OUTPUT_DIR,
 )
-from app.violation_detector import detect_violations
+from app.violation_detector import detect_violations, detect_violations_batch
 from Voilation_Template.report_generator import save_report
 from app.embedding_service import embed_text
 from app.weaviate_client import (
@@ -65,6 +65,17 @@ class URLOnlyRequest(BaseModel):
     classification: str | None = None
     project_name: str = "Building Inspection"
     contractor_name: str = ""
+
+
+class BatchURLRequest(BaseModel):
+    urls: list[str]
+    is_videos: list[bool] | None = None
+    custom_prompt: str = ""
+    top_k: int | None = None
+    classification: str | None = None
+    project_name: str = "Building Inspection"
+    contractor_name: str = ""
+
 
 
 class TextSearchRequest(BaseModel):
@@ -142,39 +153,86 @@ def analyze_url(request: URLOnlyRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/v1/analyze/url/batch")
+def analyze_url_batch(request: BatchURLRequest):
+    for url in request.urls:
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail=f"url must start with http:// or https://: {url}")
+
+    try:
+        result = detect_violations_batch(
+            media_paths_or_urls=request.urls,
+            is_videos=request.is_videos,
+            custom_prompt=request.custom_prompt,
+            top_k=request.top_k,
+            classification=request.classification,
+            project_name=request.project_name,
+            contractor_name=request.contractor_name,
+        )
+        
+        # Auto-generate HTML report for the batch!
+        try:
+            report_name = f"report_batch_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.html"
+            report_path = VIDEO_OUTPUT_DIR / report_name
+            saved_path = save_report(
+                result,
+                report_path,
+                project_name=request.project_name,
+                contractor_name=request.contractor_name,
+            )
+            actual_report_name = Path(saved_path).name
+            result["report_url"] = f"/api/v1/download/{actual_report_name}"
+            logger.info("HTML Report generated for batch: %s", actual_report_name)
+        except Exception as report_err:
+            logger.warning("Report generation failed: %s", report_err)
+
+        result.pop("_report_verdicts", None)  # internal — strip before API response
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.exception("Batch URL analysis failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @app.post("/api/v1/analyze/upload")
 async def analyze_upload(
-    file: UploadFile = File(...),
-    is_video: bool = Form(False),
+    files: list[UploadFile] = File(...),
     custom_prompt: str = Form(""),
     top_k: int | None = Form(None),
     classification: str | None = Form(None),
     project_name: str = Form("Building Inspection"),
     contractor_name: str = Form(""),
 ):
-    suffix = Path(file.filename or "upload").suffix
-    # Auto-detect video from file extension
+    temp_paths = []
+    is_videos = []
+    
+    # Auto-detect video extensions
     video_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
-    if suffix.lower() in video_extensions:
-        is_video = True
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    
+    for file in files:
+        suffix = Path(file.filename or "upload").suffix
+        is_vid = suffix.lower() in video_extensions
+        is_videos.append(is_vid)
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            temp_paths.append(tmp.name)
 
     try:
-        result = detect_violations(
-            media_path_or_url=tmp_path,
-            is_video=is_video,
+        result = detect_violations_batch(
+            media_paths_or_urls=temp_paths,
+            is_videos=is_videos,
             custom_prompt=custom_prompt,
             top_k=top_k,
             classification=classification,
             project_name=project_name,
             contractor_name=contractor_name,
         )
-        # Auto-generate HTML report for both images and videos
+        
+        # Auto-generate HTML report for the batch!
         try:
-            report_name = f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.html"
+            report_name = f"report_batch_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.html"
             report_path = VIDEO_OUTPUT_DIR / report_name
             saved_path = save_report(
                 result,
@@ -194,11 +252,35 @@ async def analyze_upload(
         logger.exception("Upload analysis failed")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        for path in temp_paths:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+@app.post("/api/v1/analyze/upload/batch")
+async def analyze_upload_batch(
+    files: list[UploadFile] = File(...),
+    custom_prompt: str = Form(""),
+    top_k: int | None = Form(None),
+    classification: str | None = Form(None),
+    project_name: str = Form("Building Inspection"),
+    contractor_name: str = Form(""),
+):
+    # Backward compatible alias to the unified analyze_upload endpoint
+    return await analyze_upload(
+        files=files,
+        custom_prompt=custom_prompt,
+        top_k=top_k,
+        classification=classification,
+        project_name=project_name,
+        contractor_name=contractor_name,
+    )
+
+
 @app.post("/api/v1/search/rules")
+
 def search_sbc_rules(request: TextSearchRequest):
     try:
         query_vector = embed_text(request.query)

@@ -62,43 +62,183 @@ def _encode_image_bytes(data: bytes, mime: str = "image/jpeg") -> dict:
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
 
 
+def extract_scene_change_keyframes(
+    video_path: str,
+    max_frames: int = 6,
+) -> list[dict[str, Any]]:
+    """
+    Intelligent scene-change detection keyframe extractor.
+    Computes absolute pixel differences between sequential frames to extract
+    significant visual moments / keyframes.
+    
+    Returns a list of dicts:
+    [
+      {
+        "frame_index": int,
+        "timestamp_sec": float,
+        "content": dict,  # standard image_url base64 dict for LLM payload
+        "frame": np.ndarray  # raw frame image
+      }
+    ]
+    """
+    import urllib.request
+    import uuid
+    import numpy as np
+    import os
+    from app.config import VIDEO_OUTPUT_DIR
+
+    # Download remote videos first
+    local_path = video_path
+    is_temp = False
+    if video_path.startswith("http"):
+        local_path = str(VIDEO_OUTPUT_DIR / f"temp_kf_{uuid.uuid4().hex[:12]}.mp4")
+        logger.info("Downloading remote video for keyframe extraction: %s -> %s", video_path, local_path)
+        urllib.request.urlretrieve(video_path, local_path)
+        is_temp = True
+
+    try:
+        cap = cv2.VideoCapture(local_path)
+        if not cap.isOpened():
+            raise ValueError(f"Unable to open video: {local_path}")
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0:
+            cap.release()
+            raise ValueError(f"Video has no readable frames: {local_path}")
+
+        # Determine sampling rate. To be ultra fast, sample at 5 frames per second
+        sample_step = max(1, int(round(fps / 5.0)))
+        
+        sampled_frames = []
+        prev_gray = None
+        
+        # Read frames, resize and convert to grayscale to compute absolute differences rapidly
+        for i in range(0, total_frames, sample_step):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                continue
+            
+            # Grayscale, resize to small resolution to keep calculations microsecond-fast
+            small_gray = cv2.cvtColor(cv2.resize(frame, (160, 120)), cv2.COLOR_BGR2GRAY)
+            # Subtle Gaussian blur to eliminate compression noise
+            small_gray_blur = cv2.GaussianBlur(small_gray, (5, 5), 0)
+            
+            diff_score = 0.0
+            if prev_gray is not None:
+                # Compute absolute difference between sequential sampled frames
+                diff = cv2.absdiff(small_gray_blur, prev_gray)
+                diff_score = float(np.mean(diff))
+                
+            prev_gray = small_gray_blur
+            sampled_frames.append({
+                "index": i,
+                "timestamp_sec": i / fps,
+                "score": diff_score,
+                "frame": frame
+            })
+            
+        cap.release()
+        
+        if not sampled_frames:
+            raise ValueError("No frames could be sampled from the video")
+            
+        # Detect peaks in diff scores
+        peaks = []
+        n_sampled = len(sampled_frames)
+        for i in range(n_sampled):
+            score = sampled_frames[i]["score"]
+            left_score = sampled_frames[i-1]["score"] if i > 0 else 0.0
+            right_score = sampled_frames[i+1]["score"] if i < n_sampled - 1 else 0.0
+            
+            # Peak condition: higher than neighbors and above a minimal change threshold
+            if score > left_score and score > right_score and score >= 2.0:
+                peaks.append(sampled_frames[i])
+                
+        # Sort peaks by score descending
+        peaks.sort(key=lambda x: x["score"], reverse=True)
+        
+        selected_keyframes = []
+        
+        # Always prioritize/include the first frame for baseline context
+        selected_keyframes.append(sampled_frames[0])
+        
+        # Filter other peaks ensuring a minimum temporal distance of 1.5s
+        min_dist_sec = 1.5
+        for peak in peaks:
+            if len(selected_keyframes) >= max_frames:
+                break
+            too_close = any(abs(peak["timestamp_sec"] - k["timestamp_sec"]) < min_dist_sec for k in selected_keyframes)
+            if not too_close:
+                selected_keyframes.append(peak)
+                
+        # Space out remaining frames if we have extra slots
+        while len(selected_keyframes) < max_frames and len(sampled_frames) > len(selected_keyframes):
+            selected_keyframes.sort(key=lambda x: x["timestamp_sec"])
+            max_gap = 0.0
+            insert_idx = -1
+            
+            for j in range(len(selected_keyframes) - 1):
+                gap = selected_keyframes[j+1]["timestamp_sec"] - selected_keyframes[j]["timestamp_sec"]
+                if gap > max_gap:
+                    max_gap = gap
+                    insert_idx = j
+                    
+            last_ts = selected_keyframes[-1]["timestamp_sec"]
+            video_duration = sampled_frames[-1]["timestamp_sec"]
+            if (video_duration - last_ts) > max_gap:
+                max_gap = video_duration - last_ts
+                insert_idx = len(selected_keyframes) - 1
+                
+            if max_gap <= min_dist_sec:
+                remaining = [f for f in sampled_frames if f["index"] not in {k["index"] for k in selected_keyframes}]
+                if not remaining:
+                    break
+                remaining.sort(key=lambda x: x["score"], reverse=True)
+                selected_keyframes.append(remaining[0])
+                continue
+                
+            if insert_idx == len(selected_keyframes) - 1:
+                mid_ts = (last_ts + video_duration) / 2.0
+            else:
+                mid_ts = (selected_keyframes[insert_idx]["timestamp_sec"] + selected_keyframes[insert_idx+1]["timestamp_sec"]) / 2.0
+                
+            best_frame_to_insert = min(sampled_frames, key=lambda x: abs(x["timestamp_sec"] - mid_ts))
+            if best_frame_to_insert["index"] in {k["index"] for k in selected_keyframes}:
+                break
+            selected_keyframes.append(best_frame_to_insert)
+            
+        selected_keyframes.sort(key=lambda x: x["timestamp_sec"])
+        
+        final_keyframes = []
+        for k in selected_keyframes:
+            ok, encoded = cv2.imencode(".jpg", k["frame"])
+            if not ok:
+                continue
+            final_keyframes.append({
+                "frame_index": k["index"],
+                "timestamp_sec": k["timestamp_sec"],
+                "content": _encode_image_bytes(encoded.tobytes()),
+                "frame": k["frame"]
+            })
+            
+        return final_keyframes
+        
+    finally:
+        if is_temp and os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+
+
 def _extract_video_frame_contents(
     file_path: str,
     num_frames: int = 4,
 ) -> list[dict[str, Any]]:
-    cap = cv2.VideoCapture(file_path)
-    if not cap.isOpened():
-        raise ValueError(f"Unable to open video: {file_path}")
-
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames <= 0:
-        cap.release()
-        raise ValueError(f"Video has no readable frames: {file_path}")
-
-    frame_indices = sorted(
-        {
-            min(total_frames - 1, int(round(i * (total_frames - 1) / max(1, num_frames - 1))))
-            for i in range(num_frames)
-        }
-    )
-
-    contents: list[dict[str, Any]] = []
-    for index in frame_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, index)
-        ok, frame = cap.read()
-        if not ok or frame is None:
-            continue
-        ok, encoded = cv2.imencode(".jpg", frame)
-        if not ok:
-            continue
-        contents.append(_encode_image_bytes(encoded.tobytes()))
-
-    cap.release()
-
-    if not contents:
-        raise ValueError(f"Failed to extract usable frames from video: {file_path}")
-
-    return contents
+    keyframes = extract_scene_change_keyframes(file_path, max_frames=num_frames)
+    return [k["content"] for k in keyframes]
 
 
 def _build_url_content(url: str, is_video: bool) -> dict:
@@ -282,6 +422,29 @@ OBSERVE_VIDEO_ITEMS_USER_PROMPT = (
     "{custom_prompt}"
 )
 
+OBSERVE_VIDEO_KEYFRAMES_USER_PROMPT = (
+    "You are inspecting a set of {num_keyframes} keyframes extracted from a video.\n"
+    "The frames are ordered chronologically and correspond to the following exact timestamps:\n"
+    "{timeline_text}\n\n"
+    "Examine these keyframes carefully and return a JSON array of potential safety/compliance items you observe.\n"
+    "Each item in the JSON array must contain:\n"
+    "- category: one of Structural Safety, Electrical, Plumbing, Fire Safety\n"
+    "- text: concise observation text for that visible item, including visible missing/unsafe indicators if clear\n"
+    "- timestamp_sec: the EXACT timestamp from the timeline above corresponding to the frame where the item is observed (choose exactly from: {allowed_timestamps_list})\n"
+    "- bbox: [x1,y1,x2,y2] normalized from 0 to 1000 around the item on that specific keyframe, or null if not localizable\n\n"
+    "Rules:\n"
+    "- Category must be based on what is actually visible.\n"
+    "- Use Electrical for panels, switchgear, wiring, conduit, transformers, generators, electrical rooms, voltage labels.\n"
+    "- Use Structural Safety for rebar, slabs, columns, beams, excavation, scaffolding, formwork, structural site hazards.\n"
+    "- Use Plumbing for pipes, valves, drains, pumps, water/sanitary systems.\n"
+    "- Use Fire Safety for sprinklers, alarms, extinguishers, fire doors, exit signs, emergency lighting.\n"
+    "- Return 1 to 12 high-signal items from throughout the keyframes.\n"
+    "- Do not include explanations outside JSON.\n\n"
+    "Example:\n"
+    "[{{\"category\":\"Electrical\",\"text\":\"Open electrical panel with visible wiring. Warning signage absent.\",\"timestamp_sec\":12.5,\"bbox\":[170,120,650,760]}}]\n\n"
+    "{custom_prompt}"
+)
+
 
 def build_user_content(
     media_path_or_url: str,
@@ -322,30 +485,41 @@ def observe_items(
 ) -> tuple[str, dict[str, int]]:
     content: list[dict[str, Any]] = []
 
-    if media_path_or_url.startswith("http"):
-        content.append(_build_url_content(media_path_or_url, is_video))
-    elif is_video:
-        # Send the whole video to GLM-4.6V natively
-        content.append(_build_video_content(media_path_or_url))
-    else:
-        content.append(_build_image_content(media_path_or_url))
-
     if is_video:
-        media_type = "video"
-        prompt_template = OBSERVE_VIDEO_ITEMS_USER_PROMPT
+        from app.config import VIDEO_FRAMES_COUNT
+        keyframes = extract_scene_change_keyframes(media_path_or_url, max_frames=VIDEO_FRAMES_COUNT)
+        for kf in keyframes:
+            content.append(kf["content"])
+            
+        timeline_items = []
+        allowed_ts = []
+        for i, kf in enumerate(keyframes):
+            t_val = kf["timestamp_sec"]
+            timeline_items.append(f"- Frame {i+1}: t = {t_val:.2f}s")
+            allowed_ts.append(f"{t_val:.2f}")
+            
+        timeline_text = "\n".join(timeline_items)
+        allowed_timestamps_list = ", ".join(allowed_ts)
+        
+        prompt_text = OBSERVE_VIDEO_KEYFRAMES_USER_PROMPT.format(
+            num_keyframes=len(keyframes),
+            timeline_text=timeline_text,
+            allowed_timestamps_list=allowed_timestamps_list,
+            custom_prompt=custom_prompt
+        )
     else:
-        media_type = "image"
-        prompt_template = OBSERVE_ITEMS_USER_PROMPT
+        if media_path_or_url.startswith("http"):
+            content.append(_build_url_content(media_path_or_url, is_video=False))
+        else:
+            content.append(_build_image_content(media_path_or_url))
+            
+        prompt_text = OBSERVE_ITEMS_USER_PROMPT.format(
+            media_type="image",
+            custom_prompt=custom_prompt
+        )
 
-    content.append(
-        {
-            "type": "text",
-            "text": prompt_template.format(
-                media_type=media_type,
-                custom_prompt=custom_prompt,
-            ),
-        }
-    )
+    content.append({"type": "text", "text": prompt_text})
+
     return _call_llm(
         OBSERVE_ITEMS_SYSTEM_PROMPT,
         content,
@@ -361,12 +535,16 @@ def classify_scene(
 ) -> tuple[str, dict[str, int]]:
     content: list[dict[str, Any]] = []
 
-    if media_path_or_url.startswith("http"):
-        content.append(_build_url_content(media_path_or_url, is_video))
-    elif is_video:
-        content.append(_build_video_content(media_path_or_url))
+    if is_video:
+        # Extract a few keyframes to make classification fast and accurate
+        keyframes = extract_scene_change_keyframes(media_path_or_url, max_frames=3)
+        for kf in keyframes:
+            content.append(kf["content"])
     else:
-        content.append(_build_image_content(media_path_or_url))
+        if media_path_or_url.startswith("http"):
+            content.append(_build_url_content(media_path_or_url, is_video=False))
+        else:
+            content.append(_build_image_content(media_path_or_url))
 
     media_type = "video" if is_video else "image"
     content.append(

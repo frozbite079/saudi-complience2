@@ -262,6 +262,105 @@ def _normalize_classification(value: str) -> str:
     return ""
 
 
+def _merge_consecutive_violations(v_list: list[dict], max_gap_sec: float = 5.0) -> list[dict]:
+    if not v_list:
+        return []
+        
+    def parse_hms(hms_str: str) -> float:
+        try:
+            parts = hms_str.split(":")
+            if len(parts) == 3:
+                return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+            elif len(parts) == 2:
+                return float(parts[0]) * 60 + float(parts[1])
+            return float(hms_str)
+        except Exception:
+            return 0.0
+
+    def format_ts_hms(seconds: float) -> str:
+        h = int(seconds) // 3600
+        m = (int(seconds) % 3600) // 60
+        s = int(seconds) % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    # Sort by sbc_reference and timestamp_sec
+    sorted_v = sorted(
+        v_list,
+        key=lambda x: (str(x.get("sbc_reference") or ""), float(x.get("timestamp_sec") or 0.0))
+    )
+    
+    merged: list[dict] = []
+    for item in sorted_v:
+        # Pre-initialize timestamp_formatted and timestamp_range if they are not already set
+        t_val = item.get("timestamp_sec")
+        if t_val is not None:
+            t_sec = float(t_val)
+            if not item.get("timestamp_formatted"):
+                item["timestamp_formatted"] = format_ts_hms(t_sec)
+            if not item.get("timestamp_range"):
+                item["timestamp_range"] = item["timestamp_formatted"]
+
+        if not merged:
+            merged.append(dict(item))
+            continue
+            
+        prev = merged[-1]
+        same_ref = str(item.get("sbc_reference") or "") == str(prev.get("sbc_reference") or "")
+        
+        t_curr = float(item.get("timestamp_sec") or 0.0)
+        t_prev = float(prev.get("timestamp_sec") or 0.0)
+        close_in_time = (t_curr - t_prev) <= max_gap_sec
+        
+        if same_ref and close_in_time:
+            # Keep the one with higher confidence
+            conf_curr = float(item.get("confidence") or 0.0)
+            conf_prev = float(prev.get("confidence") or 0.0)
+            
+            if "occurrences" not in prev:
+                prev["occurrences"] = [t_prev]
+            prev["occurrences"].append(t_curr)
+            
+            # Combine the evidences cleanly
+            evidences = []
+            if prev.get("evidence"):
+                evidences.append(prev["evidence"])
+            if item.get("evidence") and item.get("evidence") != prev.get("evidence"):
+                evidences.append(item["evidence"])
+            combined_evidence = "; ".join(evidences)
+            
+            if conf_curr > conf_prev:
+                # Update with higher confidence values
+                for key in ["confidence", "confidence_pct", "bbox", "frame_b64"]:
+                    if key in item and item[key] is not None:
+                        prev[key] = item[key]
+            
+            # Set combined evidence
+            prev["evidence"] = combined_evidence
+            
+            # Build timestamp range string
+            t_start = min(prev["occurrences"])
+            t_end = max(prev["occurrences"])
+            prev["timestamp_range"] = f"{format_ts_hms(t_start)} - {format_ts_hms(t_end)}"
+            # Update the main timestamp to be the start timestamp
+            prev["timestamp_sec"] = t_start
+            prev["timestamp_formatted"] = format_ts_hms(t_start)
+        else:
+            merged.append(dict(item))
+            
+    # Clean up temporary occurrences key and ensure all have range and formatted keys
+    for item in merged:
+        item.pop("occurrences", None)
+        t_val = item.get("timestamp_sec")
+        if t_val is not None:
+            t_sec = float(t_val)
+            if not item.get("timestamp_formatted"):
+                item["timestamp_formatted"] = format_ts_hms(t_sec)
+            if not item.get("timestamp_range"):
+                item["timestamp_range"] = item["timestamp_formatted"]
+        
+    return merged
+
+
 def detect_violations(
     media_path_or_url: str,
     is_video: bool = False,
@@ -607,31 +706,59 @@ def detect_violations(
         for v in all_verdicts if v.get("verdict") == "VIOLATION"
     ]
 
+    api_verdicts = [
+        {
+            "sbc_reference":  v.get("sbc_reference"),
+            "category":       v.get("category"),
+            "sub_category":   v.get("sub_category"),
+            "rule_text":      v.get("rule_text"),
+            "cv_target":      v.get("cv_target"),
+            "detection_type": v.get("detection_type"),
+            "risk_level":     v.get("priority"),
+            "verdict":        v.get("verdict"),
+            "evidence":       v.get("evidence"),
+            "confidence":     v.get("confidence"),
+            "confidence_pct": int(round(float(v["confidence"]) * 100)) if v.get("confidence") is not None else None,
+            "source_item_id": v.get("source_item_id"),
+            "source_text":    v.get("source_text"),
+            "bbox":           v.get("bbox"),
+            "timestamp_sec":  v.get("timestamp_sec"),
+        }
+        for v in all_verdicts if v.get("verdict") == "VIOLATION"
+    ]
+
+    # Add formatted timestamps for videos/images
+    def format_ts_hms(seconds: float | None) -> str | None:
+        if seconds is None:
+            return None
+        h = int(seconds) // 3600
+        m = (int(seconds) % 3600) // 60
+        s = int(seconds) % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    for v in _verdicts_for_report:
+        if v.get("timestamp_sec") is not None:
+            v["timestamp_formatted"] = format_ts_hms(float(v["timestamp_sec"]))
+            v["timestamp_range"] = v["timestamp_formatted"]
+
+    for v in api_verdicts:
+        if v.get("timestamp_sec") is not None:
+            v["timestamp_formatted"] = format_ts_hms(float(v["timestamp_sec"]))
+            v["timestamp_range"] = v["timestamp_formatted"]
+
+    if is_video:
+        _verdicts_for_report = _merge_consecutive_violations(_verdicts_for_report)
+        api_verdicts = _merge_consecutive_violations(api_verdicts)
+        summary["violations"] = len(api_verdicts)
+        total_decided = summary["compliant"] + summary["violations"]
+        summary["compliance_rate"] = round(summary["compliant"] / total_decided * 100, 1) if total_decided else 100.0
+
     result = {
         "classification": primary_category,
         "classifications": categories,
         "db_category": primary_db_category,
         "db_categories": db_categories,
-        "verdicts": [
-            {
-                "sbc_reference":  v.get("sbc_reference"),
-                "category":       v.get("category"),
-                "sub_category":   v.get("sub_category"),
-                "rule_text":      v.get("rule_text"),
-                "cv_target":      v.get("cv_target"),
-                "detection_type": v.get("detection_type"),
-                "risk_level":     v.get("priority"),
-                "verdict":        v.get("verdict"),
-                "evidence":       v.get("evidence"),
-                "confidence":     v.get("confidence"),
-                "confidence_pct": int(round(float(v["confidence"]) * 100)) if v.get("confidence") is not None else None,
-                "source_item_id": v.get("source_item_id"),
-                "source_text":    v.get("source_text"),
-                "bbox":           v.get("bbox"),
-                "timestamp_sec":  v.get("timestamp_sec"),
-            }
-            for v in all_verdicts if v.get("verdict") == "VIOLATION"
-        ],
+        "verdicts": api_verdicts,
         "annotated_image": annotated_image,
         "annotated_media": (
             {"type": "image", "data_url": annotated_image}
@@ -669,3 +796,237 @@ def detect_violations(
         logger.info("Result cached under key %s", cache_key[:12])
 
     return result
+
+
+def detect_violations_batch(
+    media_paths_or_urls: list[str],
+    is_videos: list[bool] | None = None,
+    custom_prompt: str = "",
+    top_k: int | None = None,
+    classification: str | None = None,
+    project_name: str = "Building Inspection",
+    contractor_name: str = "",
+) -> dict[str, Any]:
+    """
+    Process a list of image/video paths or URLs in parallel, then aggregate and consolidate results.
+    """
+    logger.info(
+        "Starting batch violation detection | count=%d | project=%s | contractor=%s",
+        len(media_paths_or_urls),
+        project_name,
+        contractor_name,
+    )
+
+    if not media_paths_or_urls:
+        return {
+            "classification": "General",
+            "classifications": [],
+            "db_category": "General",
+            "db_categories": [],
+            "verdicts": [],
+            "summary": {
+                "total_rules_evaluated": 0,
+                "violations": 0,
+                "compliant": 0,
+                "uncertain": 0,
+                "compliance_rate": 100.0,
+            },
+            "project_name": project_name,
+            "contractor_name": contractor_name,
+            "annotated_media_list": [],
+            "ai_recommendations": [],
+            "token_usage": {
+                "observe": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                "judge": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            },
+        }
+
+    # Prepare flags
+    video_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    if is_videos is None:
+        is_videos = []
+        for path in media_paths_or_urls:
+            ext = Path(path).suffix.lower() if not path.startswith("http") else ""
+            is_videos.append(ext in video_extensions)
+    elif len(is_videos) < len(media_paths_or_urls):
+        # Pad with False or detect
+        for idx in range(len(is_videos), len(media_paths_or_urls)):
+            path = media_paths_or_urls[idx]
+            ext = Path(path).suffix.lower() if not path.startswith("http") else ""
+            is_videos.append(ext in video_extensions)
+
+    # We import this internally to avoid circular dependencies
+    from Voilation_Template.report_generator import _crop_image_b64
+
+    # Run in parallel using ThreadPoolExecutor
+    results: list[dict[str, Any] | None] = [None] * len(media_paths_or_urls)
+
+    def _run_single(idx: int):
+        path = media_paths_or_urls[idx]
+        is_vid = is_videos[idx]
+        try:
+            res = detect_violations(
+                media_path_or_url=path,
+                is_video=is_vid,
+                custom_prompt=custom_prompt,
+                top_k=top_k,
+                classification=classification,
+                project_name=project_name,
+                contractor_name=contractor_name,
+            )
+            results[idx] = res
+        except Exception:
+            logger.exception("Failed to run single detection in batch for media: %s", path)
+
+    max_workers = min(len(media_paths_or_urls), 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit tasks and track them
+        futures = [executor.submit(_run_single, i) for i in range(len(media_paths_or_urls))]
+        for future in futures:
+            future.result()  # blocks until complete, raises thread exception if any
+
+    # Aggregation
+    combined_verdicts = []
+    combined_report_verdicts = []
+    combined_classifications = set()
+    combined_db_categories = set()
+    
+    total_rules_evaluated = 0
+    total_violations = 0
+    total_compliant = 0
+    total_uncertain = 0
+
+    token_usage_observe = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    token_usage_judge = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    
+    annotated_media_list = []
+    all_recommendations_raw = []
+
+    for idx, res in enumerate(results):
+        if not res:
+            continue
+        
+        path = media_paths_or_urls[idx]
+        media_name = Path(path).name if not path.startswith("http") else path
+        is_vid = is_videos[idx]
+        
+        # 1. Categories
+        if res.get("classification"):
+            combined_classifications.add(res["classification"])
+        if res.get("classifications"):
+            combined_classifications.update(res["classifications"])
+        if res.get("db_category"):
+            combined_db_categories.add(res["db_category"])
+        if res.get("db_categories"):
+            combined_db_categories.update(res["db_categories"])
+
+        # 2. Summary
+        sum_data = res.get("summary", {})
+        total_rules_evaluated += sum_data.get("total_rules_evaluated", 0)
+        total_violations += sum_data.get("violations", 0)
+        total_compliant += sum_data.get("compliant", 0)
+        total_uncertain += sum_data.get("uncertain", 0)
+
+        # 3. Tokens
+        t_usage = res.get("token_usage", {})
+        for key in ["input_tokens", "output_tokens", "total_tokens"]:
+            token_usage_observe[key] += t_usage.get("observe", {}).get(key, 0)
+            token_usage_judge[key] += t_usage.get("judge", {}).get(key, 0)
+
+        # 4. Recommendations
+        if res.get("ai_recommendations"):
+            all_recommendations_raw.extend(res["ai_recommendations"])
+
+        # 5. Media list item
+        annotated_media_list.append({
+            "media_index": idx,
+            "media_name": media_name,
+            "is_video": is_vid,
+            "annotated_image": res.get("annotated_image"),
+            "annotated_media": res.get("annotated_media"),
+            "heatmap_image": res.get("heatmap_image"),
+            "summary": sum_data,
+        })
+
+        # 6. Verdicts & Report Verdicts
+        item_verdicts = res.get("verdicts", [])
+        report_verdicts = res.get("_report_verdicts", [])
+
+        # For report verdicts, if they are from static images, we can pre-crop the region using _crop_image_b64
+        # and set it to frame_b64, so that each card in the combined HTML report shows its specific cropped evidence!
+        annotated_image = res.get("annotated_image")
+        if annotated_image and not is_vid:
+            for v in report_verdicts:
+                if not v.get("frame_b64") and v.get("bbox"):
+                    try:
+                        cropped = _crop_image_b64(annotated_image, v["bbox"])
+                        if cropped:
+                            v["frame_b64"] = cropped
+                    except Exception:
+                        pass
+
+        # Tag with media source context
+        for v in item_verdicts:
+            v["media_name"] = media_name
+            v["media_index"] = idx
+            v["media_type"] = "video" if is_vid else "image"
+        for v in report_verdicts:
+            v["media_name"] = media_name
+            v["media_index"] = idx
+            v["media_type"] = "video" if is_vid else "image"
+
+        combined_verdicts.extend(item_verdicts)
+        combined_report_verdicts.extend(report_verdicts)
+
+    # Unique Recommendations (Deduplicated based on sbc_reference)
+    seen_refs = set()
+    dedup_recommendations = []
+    for rec in all_recommendations_raw:
+        ref = rec.get("sbc_reference")
+        if ref not in seen_refs:
+            seen_refs.add(ref)
+            dedup_recommendations.append(rec)
+
+    # Compliance Rate
+    total_decided = total_compliant + total_violations
+    compliance_rate = (total_compliant / total_decided * 100.0) if total_decided > 0 else 100.0
+
+    combined_summary = {
+        "total_rules_evaluated": total_rules_evaluated,
+        "violations": total_violations,
+        "compliant": total_compliant,
+        "uncertain": total_uncertain,
+        "compliance_rate": compliance_rate,
+    }
+
+    # Set up some standard default values from first result for backward compatibility
+    primary_category = results[0].get("classification", "General") if (results and results[0]) else "General"
+    primary_db_category = results[0].get("db_category", "General") if (results and results[0]) else "General"
+    first_annotated_image = results[0].get("annotated_image") if (results and results[0]) else None
+    first_annotated_media = results[0].get("annotated_media") if (results and results[0]) else None
+    first_heatmap = results[0].get("heatmap_image") if (results and results[0]) else None
+
+    # Consolidated Output dict
+    batch_result = {
+        "classification": primary_category,
+        "classifications": sorted(list(combined_classifications)),
+        "db_category": primary_db_category,
+        "db_categories": sorted(list(combined_db_categories)),
+        "verdicts": combined_verdicts,
+        "annotated_image": first_annotated_image,
+        "annotated_media": first_annotated_media,
+        "heatmap_image": first_heatmap,
+        "annotated_media_list": annotated_media_list,
+        "summary": combined_summary,
+        "project_name": project_name,
+        "contractor_name": contractor_name,
+        "ai_recommendations": dedup_recommendations,
+        "token_usage": {
+            "observe": token_usage_observe,
+            "judge": token_usage_judge,
+        },
+        "_report_verdicts": combined_report_verdicts,
+    }
+
+    return batch_result
+

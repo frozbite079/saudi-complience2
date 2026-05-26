@@ -35,6 +35,25 @@ def _load_css() -> str:
     return ""
 
 
+def _load_logo_b64() -> str:
+    """Read the logo image and return as a base64 data-URL."""
+    logo_paths = [
+        Path("/home/redspark/Pictures/saudi-complience/AICE_Logo.png"),
+        Path(__file__).resolve().parent.parent / "AICE_Logo.png",
+        Path(__file__).resolve().parent / "AICE_Logo.png",
+        Path(__file__).resolve().parent / "logo.png",
+    ]
+    for path in logo_paths:
+        if path.exists():
+            try:
+                data = path.read_bytes()
+                encoded = base64.b64encode(data).decode("utf-8")
+                return f"data:image/png;base64,{encoded}"
+            except Exception as exc:
+                logger.warning("Failed to load logo from %s: %s", path, exc)
+    return ""
+
+
 def _severity_class(priority: str) -> str:
     """Map priority string to CSS class."""
     p = (priority or "").upper()
@@ -124,8 +143,15 @@ def _render_violation_card(v: dict, index: int, annotated_image: str | None = No
             </div>"""
 
     timestamp_row = ""
+    timestamp_range = v.get("timestamp_range")
     timestamp_sec = v.get("timestamp_sec")
-    if timestamp_sec is not None:
+    if timestamp_range:
+        timestamp_row = f"""
+            <div class="detail-row">
+              <span class="detail-label">Timestamp</span>
+              <span class="detail-value" style="font-family: monospace; background: var(--surface-container); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--surface-border); color: var(--primary);">⏱️ {timestamp_range}</span>
+            </div>"""
+    elif timestamp_sec is not None:
         mins, secs = divmod(int(timestamp_sec), 60)
         timestamp_row = f"""
             <div class="detail-row">
@@ -216,6 +242,8 @@ def generate_report_html(
         Fully rendered, self-contained HTML string.
     """
     now = datetime.datetime.now()
+    logo_b64 = _load_logo_b64()
+    logo_html = f'<img src="{logo_b64}" alt="AICE Logo" class="logo-img" />' if logo_b64 else '<div class="logo-icon">🏛️</div>'
 
     # ── Extract data ────────────────────────────────────────────
     summary = detection_result.get("summary", {})
@@ -274,7 +302,35 @@ def generate_report_html(
     is_video = annotated_media and annotated_media.get("type") == "video"
 
     # ── Evidence section ────────────────────────────────────────
-    if annotated_image and not is_video:
+    evidence_section = ""
+    annotated_media_list = detection_result.get("annotated_media_list", [])
+    
+    if annotated_media_list:
+        evidence_section += '<div class="evidence-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;">'
+        for idx, item in enumerate(annotated_media_list, 1):
+            media_name = _esc(item.get("media_name", f"Media {idx}"))
+            media_img = item.get("annotated_image")
+            media_type_label = "🎬 Video Frame" if item.get("is_video") else "📸 Static Image"
+            comp_rate = item.get("summary", {}).get("compliance_rate", 100.0)
+            vios = item.get("summary", {}).get("violations", 0)
+            
+            status_tag = f'<span class="badge badge-compliant">Compliant</span>' if vios == 0 else f'<span class="badge badge-critical" style="background:#c62828;color:#fff;padding:2px 6px;border-radius:4px;font-size:0.75em;font-weight:600;">{vios} Violations</span>'
+            
+            if media_img:
+                evidence_section += f"""
+              <div class="evidence-item" style="border: 1px solid var(--surface-border); border-radius: 8px; overflow: hidden; background: var(--surface-container); padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                <img src="{media_img}" alt="{media_name}" style="width:100%; height:180px; object-fit:cover; border-radius:6px; border:1px solid var(--surface-border);">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; font-weight:600; margin-top:4px;">
+                  <span style="color:var(--primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap; max-width:160px;" title="{media_name}">{media_name}</span>
+                  {status_tag}
+                </div>
+                <div style="font-size:0.75em; color:var(--on-surface-subtle); display:flex; justify-content:space-between; margin-top:2px;">
+                  <span>{media_type_label}</span>
+                  <span>Compliance: {int(comp_rate)}%</span>
+                </div>
+              </div>"""
+        evidence_section += "</div>"
+    elif annotated_image and not is_video:
         evidence_section = f"""
     <div class="evidence-grid">
       <div class="evidence-item" style="grid-column: span 2;">
@@ -284,9 +340,6 @@ def generate_report_html(
         </div>
       </div>
     </div>"""
-    else:
-        # Don't show global image or video if it's a video (we show frames per-violation instead)
-        evidence_section = ""
 
     # ── Reference table rows ────────────────────────────────────
     if verdicts:
@@ -314,8 +367,8 @@ def generate_report_html(
     if heatmap_image:
         heatmap_page = f"""<div class="report-page">
   <div class="report-header">
-    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
-    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-logo">{logo_html}</div>
+    <div class="header-org"><div class="org-title">AICE Inspection Report</div></div>
     <div class="header-meta"><div class="report-id">{report_id}</div></div>
   </div>
   <div class="page-content">
@@ -379,8 +432,8 @@ def generate_report_html(
 
         recommendations_page = f"""<div class="report-page">
   <div class="report-header">
-    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
-    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-logo">{logo_html}</div>
+    <div class="header-org"><div class="org-title">AICE Inspection Report</div></div>
     <div class="header-meta"><div class="report-id">{report_id}</div></div>
   </div>
   <div class="page-content">
@@ -404,7 +457,7 @@ def generate_report_html(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SBC Inspection Report — {report_id}</title>
+  <title>AICE Inspection Report — {report_id}</title>
   <style>
 {_load_css()}
   </style>
@@ -417,11 +470,11 @@ def generate_report_html(
 <div class="report-page">
   <div class="report-header">
     <div class="header-logo">
-      <div class="logo-icon">🏛️</div>
+      {logo_html}
     </div>
     <div class="header-org">
-      <div class="org-title">Saudi Building Code National Committee</div>
-      <div class="org-subtitle">Kingdom of Saudi Arabia</div>
+      <div class="org-title">AICE Quality & Compliance Platform</div>
+      <div class="org-subtitle">Automated Inspection & Compliance Engine</div>
     </div>
     <div class="header-meta">
       <div class="report-id">{report_id}</div>
@@ -473,10 +526,6 @@ def generate_report_html(
         {status_html}
         <div class="compliance-stats">
           <div class="stat">
-            <div class="stat-value">{total_items}</div>
-            <div class="stat-label">Total Items</div>
-          </div>
-          <div class="stat">
             <div class="stat-value" style="color: var(--critical)">{violation_count}</div>
             <div class="stat-label">Violations</div>
           </div>
@@ -484,7 +533,6 @@ def generate_report_html(
             <div class="stat-value" style="color: var(--compliant)">{compliant_count}</div>
             <div class="stat-label">Compliant</div>
           </div>
-
         </div>
       </div>
     </div>
@@ -507,8 +555,8 @@ def generate_report_html(
      ═══════════════════════════════════════════════════════════ -->
 <div class="report-page">
   <div class="report-header">
-    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
-    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-logo">{logo_html}</div>
+    <div class="header-org"><div class="org-title">AICE Inspection Report</div></div>
     <div class="header-meta"><div class="report-id">{report_id}</div></div>
   </div>
 
@@ -529,8 +577,8 @@ def generate_report_html(
      ═══════════════════════════════════════════════════════════ -->
 <div class="report-page">
   <div class="report-header">
-    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
-    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-logo">{logo_html}</div>
+    <div class="header-org"><div class="org-title">AICE Inspection Report</div></div>
     <div class="header-meta"><div class="report-id">{report_id}</div></div>
   </div>
 
@@ -579,8 +627,8 @@ def generate_report_html(
      ═══════════════════════════════════════════════════════════ -->
 <div class="report-page">
   <div class="report-header">
-    <div class="header-logo"><div class="logo-icon">🏛️</div></div>
-    <div class="header-org"><div class="org-title">SBC Inspection Report</div></div>
+    <div class="header-logo">{logo_html}</div>
+    <div class="header-org"><div class="org-title">AICE Inspection Report</div></div>
     <div class="header-meta"><div class="report-id">{report_id}</div></div>
   </div>
 
@@ -590,11 +638,7 @@ def generate_report_html(
     <div class="methodology-box">
       <div class="method-row">
         <span class="method-label">Engine</span>
-        <span class="method-value">Saudi SBC Compliance AI</span>
-      </div>
-      <div class="method-row">
-        <span class="method-label">Analysis Type</span>
-        <span class="method-value">Multi-modal Vision + RAG-augmented Code Matching</span>
+        <span class="method-value">AICE Compliance AI Engine</span>
       </div>
       <div class="method-row">
         <span class="method-label">Knowledge Base</span>
